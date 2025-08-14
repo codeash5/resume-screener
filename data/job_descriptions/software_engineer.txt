@@ -1,0 +1,10 @@
+Job Title: Software Engineer
+Skills: Java, Python, C++, Git, Algorithms, Data Structures, APIs, REST, Databases
+Responsibilities:
+- Develop, test, and maintain high-quality software applications
+- Work with cross-functional teams to design new features
+- Write clean, scalable, and maintainable code
+- Debug and optimize performance of applications
+Preferred Qualifications:
+- Bachelor’s degree in Computer Science or related field
+- Familiarity with Agile methodologies and CI/CD pipelines

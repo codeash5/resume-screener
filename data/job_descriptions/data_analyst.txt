@@ -1,0 +1,11 @@
+Job Title: Data Analyst
+Skills: SQL, Python, Excel, Tableau, Power BI, Data Visualization, Statistics, Data Cleaning
+Responsibilities:
+- Clean and analyze datasets to extract actionable insights
+- Build dashboards and visualizations for business teams
+- Perform statistical analysis to identify trends and patterns
+- Collaborate with stakeholders to define data requirements
+Preferred Qualifications:
+- Bachelor’s degree in Statistics, Computer Science, or related field
+- Strong problem-solving skills and attention to detail
+
