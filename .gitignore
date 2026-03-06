@@ -1,15 +1,26 @@
-#Ignore virtual environment
+# Ignore virtual environment
 venv/
-#Ignore Python cache files
+
+# Ignore Python cache
 __pycache__/
 *.pyc
-#Ignore Jupyter Notebook checkpoints
+
+# Ignore Jupyter checkpoints
 .ipynb_checkpoints/
-#Ignore vstudio code settings
+
+# Ignore VS Code settings
 .vscode/
-Ignore environment files
+
+# Ignore environment files
 .env
-Ignore macOS system files
+
+# Ignore macOS files
 .DS_Store
-#Ignore dist directory
+
+# Ignore build folders
 .dist/
+
+# Ignore generated outputs
+*.xlsx
+*.csv
+*.zip
