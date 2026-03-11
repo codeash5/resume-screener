@@ -42,6 +42,51 @@ def clean_text(text):
     text = re.sub(r'[^a-z0-9\s]', '', text)
     return text
 
+# ---------- Skill Extraction ----------
+SKILLS = [
+    "python","sql","excel","power bi","tableau",
+    "machine learning","deep learning","pandas",
+    "numpy","statistics","data analysis","nlp"
+]
+
+def extract_skills(text):
+    found_skills = {}
+    for skill in SKILLS:
+        if skill in text:
+            found_skills[skill] = 1
+        else:
+            found_skills[skill] = 0
+    return found_skills  
+
+# ---------- Extract skills from Job Description ----------
+def extract_jd_skills(jd_text):
+
+    # look for the word "skills"
+    match = re.search(r"skills\s+(.*?)\s+responsibilities", jd_text)
+
+    if not match:
+        return []
+
+    skills_line = match.group(1)
+
+    skills = [s.strip() for s in skills_line.split()]
+
+    return skills
+
+def compute_skill_match(resume_text, jd_skills):
+
+    if len(jd_skills) == 0:
+        return 0
+
+    matched = 0
+
+    for skill in jd_skills:
+        if skill in resume_text:
+            matched += 1
+
+    return matched / len(jd_skills)
+
+
 # ---------- Load resumes (recursive) ----------
 def load_resumes():
     resumes = {}
@@ -56,15 +101,15 @@ def load_resumes():
                 path = os.path.join(root, file)
                 relative_path = os.path.relpath(path, RESUMES_FOLDER)
                 text = clean_text(extract_text_from_pdf(path))
+                category = relative_path.split(os.sep)[0]
                 if text.strip():
-                    resumes[relative_path] = text
+                    resumes[relative_path] = (text, category)
                 else:
                     print(f"⚠️ Skipping {relative_path} (no text extracted)")
 
     if resumes:
-        print(f" Loaded {len(resumes)} resumes:")
-        for r in resumes.keys():
-            print(f"   - {r}")
+        print(f" Loaded {len(resumes)} resumes successfully.")
+
     else:
         print(f" No valid resumes found in {RESUMES_FOLDER}")
     return resumes
@@ -94,18 +139,41 @@ def load_job_descriptions():
 def match_resumes_to_jobs(resumes, jobs):
     all_results = []
     for job_name, job_text in jobs.items():
+        jd_skills = extract_jd_skills(job_text)
+        print("Detected JD skills:", jd_skills)
         print(f"\n Job: {job_name}")
-        all_texts = [job_text] + list(resumes.values())
-        vectorizer = TfidfVectorizer()
+        resume_texts = [v[0] for v in resumes.values()]
+        all_texts = [job_text] + resume_texts
+        vectorizer = TfidfVectorizer(stop_words='english')
         tfidf_matrix = vectorizer.fit_transform(all_texts)
         similarities = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:]).flatten()
-        ranked = sorted(zip(resumes.keys(), similarities), key=lambda x: x[1], reverse=True)
-        for resume_name, score in ranked[:TOP_N]:
-            print(f"   {resume_name} → {score:.2f}")
-        for rank, (resume_name, score) in enumerate(ranked, start=1):
+        ranked = []
+
+        for name, score in zip(resumes.keys(), similarities):
+
+            resume_text = resumes[name][0]
+            category = resumes[name][1]
+
+            skill_score = compute_skill_match(resume_text, jd_skills)
+
+            final_score = (0.7 * score) + (0.3 * skill_score)
+
+            ranked.append((name, category, score, skill_score, final_score))
+
+        ranked = sorted(ranked, key=lambda x: x[4], reverse=True)
+        for resume_name, category, score, skill_score, final_score in ranked[:TOP_N]:
+            print(f"   {resume_name} ({category}) → sim:{score:.2f} skill:{skill_score:.2f} final:{final_score:.2f}")
+        for rank, (resume_name, category, score, skill_score, final_score) in enumerate(ranked, start=1):
             all_results.append([
-                job_name, resume_name, round(score,4), round(score*100,2), rank
-            ])
+            job_name,
+            resume_name,
+            category,
+            round(score,4),
+            round(skill_score,4),
+            round(final_score,4),
+            round(final_score*100,2),
+            rank
+        ])
     return all_results
 
 # ---------- Save Excel ----------
@@ -125,7 +193,7 @@ def save_to_excel(df, path):
         jd_rows = [i+2 for i, val in enumerate(df["Job Description"]) if val == jd]
         jd_ranks = df[df["Job Description"]==jd]["Rank"].tolist()
         for i, rank in zip(jd_rows, jd_ranks):
-            cell = ws.cell(row=i, column=5)  # Match % column
+            cell = ws.cell(row=i, column=8)  # Rank column
             if rank <=2:
                 cell.fill = green
             elif rank <=5:
@@ -154,7 +222,14 @@ if __name__ == "__main__":
     else:
         results = match_resumes_to_jobs(resumes, jobs)
         df = pd.DataFrame(results, columns=[
-            "Job Description","Resume Filename","Similarity Score","Match %","Rank"
+        "Job Description",
+        "Resume Filename",
+        "Category",
+        "Similarity Score",
+        "Skill Match",
+        "Final Score",
+        "Match %",
+        "Rank"
         ])
         csv_path = os.path.join(os.path.dirname(BASE_DIR), "data", "resume_scores_per_jd.csv")
         df.to_csv(csv_path, index=False)
