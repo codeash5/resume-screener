@@ -8,6 +8,13 @@ from openpyxl import Workbook
 from openpyxl.styles import PatternFill
 from openpyxl.utils.dataframe import dataframe_to_rows
 
+import sys
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except:
+    pass
+
 # ---------- CONFIG ----------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -44,47 +51,63 @@ def clean_text(text):
 
 # ---------- Skill Extraction ----------
 SKILLS = [
-    "python","sql","excel","power bi","tableau",
-    "machine learning","deep learning","pandas",
-    "numpy","statistics","data analysis","nlp"
+
+# Programming
+"python","java","c","c++","javascript",
+
+# Data
+"sql","mysql","postgresql",
+"excel","power bi","tableau",
+
+# Data science
+"pandas","numpy","scikit-learn",
+"machine learning","deep learning",
+
+# Software engineering
+"data structures","algorithms","git",
+"docker","rest","api","microservices",
+
+# Marketing
+"digital marketing","seo","google analytics",
+"social media","content writing",
+"email marketing","campaign management"
+
 ]
 
-def extract_skills(text):
-    found_skills = {}
-    for skill in SKILLS:
-        if skill in text:
-            found_skills[skill] = 1
-        else:
-            found_skills[skill] = 0
-    return found_skills  
+def extract_skills(text, skill_list):
+
+    text = text.lower()
+    found_skills = []
+
+    for skill in skill_list:
+
+        pattern = r'\b' + re.escape(skill) + r'\b'
+
+        if re.search(pattern, text):
+            found_skills.append(skill)
+
+    return found_skills
 
 # ---------- Extract skills from Job Description ----------
 def extract_jd_skills(jd_text):
 
-    # look for the word "skills"
-    match = re.search(r"skills\s+(.*?)\s+responsibilities", jd_text)
+    jd_skills = []
 
-    if not match:
-        return []
+    for skill in SKILLS:
+        pattern = r'\b' + re.escape(skill) + r'\b'
+        if re.search(pattern, jd_text):
+            jd_skills.append(skill)
 
-    skills_line = match.group(1)
+    return jd_skills
 
-    skills = [s.strip() for s in skills_line.split()]
+def compute_skill_match(resume_skills, jd_skills):
 
-    return skills
-
-def compute_skill_match(resume_text, jd_skills):
-
-    if len(jd_skills) == 0:
+    if not jd_skills:
         return 0
 
-    matched = 0
+    matched = set(resume_skills) & set(jd_skills)
 
-    for skill in jd_skills:
-        if skill in resume_text:
-            matched += 1
-
-    return matched / len(jd_skills)
+    return len(matched) / len(jd_skills)
 
 
 # ---------- Load resumes (recursive) ----------
@@ -105,7 +128,7 @@ def load_resumes():
                 if text.strip():
                     resumes[relative_path] = (text, category)
                 else:
-                    print(f"⚠️ Skipping {relative_path} (no text extracted)")
+                    print(f"Skipping {relative_path} (no text extracted)")
 
     if resumes:
         print(f" Loaded {len(resumes)} resumes successfully.")
@@ -144,7 +167,10 @@ def match_resumes_to_jobs(resumes, jobs):
         print(f"\n Job: {job_name}")
         resume_texts = [v[0] for v in resumes.values()]
         all_texts = [job_text] + resume_texts
-        vectorizer = TfidfVectorizer(stop_words='english')
+        vectorizer = TfidfVectorizer(
+        stop_words='english',
+        ngram_range=(1,2),
+        max_features=5000)
         tfidf_matrix = vectorizer.fit_transform(all_texts)
         similarities = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:]).flatten()
         ranked = []
@@ -154,16 +180,19 @@ def match_resumes_to_jobs(resumes, jobs):
             resume_text = resumes[name][0]
             category = resumes[name][1]
 
-            skill_score = compute_skill_match(resume_text, jd_skills)
+            resume_skills = extract_skills(resume_text, SKILLS)
+
+            skill_score = compute_skill_match(resume_skills, jd_skills)
+            missing_skills = [skill for skill in jd_skills if skill not in resume_skills][:5]
 
             final_score = (0.7 * score) + (0.3 * skill_score)
 
-            ranked.append((name, category, score, skill_score, final_score))
+            ranked.append((name, category, score, skill_score, final_score, missing_skills))
 
         ranked = sorted(ranked, key=lambda x: x[4], reverse=True)
-        for resume_name, category, score, skill_score, final_score in ranked[:TOP_N]:
+        for resume_name, category, score, skill_score, final_score, missing_skills in ranked[:TOP_N]:
             print(f"   {resume_name} ({category}) → sim:{score:.2f} skill:{skill_score:.2f} final:{final_score:.2f}")
-        for rank, (resume_name, category, score, skill_score, final_score) in enumerate(ranked, start=1):
+        for rank, (resume_name, category, score, skill_score, final_score, missing_skills) in enumerate(ranked, start=1):
             all_results.append([
             job_name,
             resume_name,
@@ -172,7 +201,8 @@ def match_resumes_to_jobs(resumes, jobs):
             round(skill_score,4),
             round(final_score,4),
             round(final_score*100,2),
-            rank
+            rank,
+            ", ".join(missing_skills)
         ])
     return all_results
 
@@ -211,14 +241,14 @@ def save_to_excel(df, path):
 # ---------- Main ----------
 if __name__ == "__main__":
     print(f" Current working directory: {os.getcwd()}")
-    print(f" Resumes folder path: {RESUMES_FOLDER or '❌ Not found'}")
-    print(f" Jobs folder path: {JOBS_FOLDER or '❌ Not found'}")
+    print(f" Resumes folder path: {RESUMES_FOLDER or 'Not found'}")
+    print(f" Jobs folder path: {JOBS_FOLDER or 'Not found'}")
 
     resumes = load_resumes()
     jobs = load_job_descriptions()
 
     if not resumes or not jobs:
-        print(" Cannot proceed — missing resumes or job descriptions.")
+        print(" Cannot proceed - missing resumes or job descriptions.")
     else:
         results = match_resumes_to_jobs(resumes, jobs)
         df = pd.DataFrame(results, columns=[
@@ -229,7 +259,8 @@ if __name__ == "__main__":
         "Skill Match",
         "Final Score",
         "Match %",
-        "Rank"
+        "Rank",
+        "Missing Skills"
         ])
         csv_path = os.path.join(os.path.dirname(BASE_DIR), "data", "resume_scores_per_jd.csv")
         df.to_csv(csv_path, index=False)
